@@ -1,0 +1,297 @@
+import tkinter as tk
+from tkinter import messagebox
+from functools import partial
+import random
+import time
+from threading import Thread
+
+# Function to solve the Sudoku board using Backtracking and Arc Consistency (AC-3)
+def solve(board):
+    start_time = time.time()  # Start timer for AI solution
+    if not ac3(board):  # AC-3 reduces the search space before applying Backtracking.
+        return False
+    if backtracking_search(board):  # Calls the Backtracking algorithm for further solving.
+        end_time = time.time()
+        duration = end_time - start_time  # Calculate AI solution time
+        arc_steps.insert(tk.END, f"AI solved the puzzle in {duration:.2f} seconds.\n")
+        arc_steps.yview(tk.END)  # Automatically scroll to the bottom
+        return True
+    return False
+
+
+# Arc Consistency (AC-3) Implementation
+def ac3(board):
+    """
+    Implements Arc Consistency (AC-3) to reduce the domain of possible values for each cell.
+    Ensures that all arcs in the board are consistent, simplifying the puzzle before solving.
+    """
+    arc_steps.delete(1.0, tk.END)  # Clears the Arc Consistency log in the GUI.
+    queue = [(r, c) for r in range(9) for c in range(9) if board[r][c] == 0]  # Queue of empty cells.
+
+    while queue:
+        row, col = queue.pop(0)
+        if not revise(board, row, col):  # Revises the domain for the cell.
+            return False  # If a domain becomes empty, the board is unsolvable.
+        # Update the Arc Consistency Log with the cell that was revised.
+        arc_steps.insert(tk.END, f"Cell ({row + 1}, {col + 1}) revised. Domain reduced.\n")
+        arc_steps.yview(tk.END)  # Automatically scroll to the bottom.
+    return True
+
+
+def revise(board, row, col):
+    """
+    Revises the domain of a cell (row, col) by considering its constraints.
+    If the domain becomes empty, the board is unsolvable.
+    """
+    domain = [x for x in range(1, 10) if is_valid_input(board, row, col, x)]  # Domain of valid values.
+    if len(domain) == 0:
+        return False  # Domain is empty, so the board is unsolvable.
+    if len(domain) == 1:  # If only one value remains in the domain, assign it to the cell.
+        board[row][col] = domain[0]
+        arc_steps.insert(tk.END, f"Cell ({row + 1}, {col + 1}) assigned value: {domain[0]}.\n")
+        arc_steps.yview(tk.END)  # Automatically scroll to the bottom.
+    return True
+
+
+# Backtracking Implementation
+def backtracking_search(board):
+    """
+    Solves the board using the Backtracking algorithm.
+    Explores all possibilities recursively until a solution is found or proven unsolvable.
+    """
+    empty = find_empty(board)  # Find the first empty cell.
+    if not empty:
+        return True  # No empty cells left; solution found.
+    row, col = empty
+
+    for num in range(1, 10):  # Try all possible values (1-9).
+        if is_valid_input(board, row, col, num):  # Check if the value is valid for the current cell.
+            board[row][col] = num
+            if backtracking_search(board):  # Recursive call to solve the rest of the board.
+                return True
+            board[row][col] = 0  # Backtrack if the current value doesn't lead to a solution.
+
+    return False  # No valid number leads to a solution.
+
+
+def find_empty(board):
+    """
+    Finds the first empty cell in the board.
+    Returns the row and column of the empty cell, or None if the board is complete.
+    """
+    for i in range(9):
+        for j in range(9):
+            if board[i][j] == 0:
+                return i, j
+    return None
+
+
+def is_valid_input(board, row, col, num):
+    """
+    Validates if a number (num) can be placed in a specific cell (row, col) without breaking Sudoku rules.
+    """
+    # Check row.
+    if num in board[row]:
+        return False
+    # Check column.
+    if num in [board[i][col] for i in range(9)]:
+        return False
+    # Check 3x3 block.
+    start_row, start_col = 3 * (row // 3), 3 * (col // 3)
+    for i in range(start_row, start_row + 3):
+        for j in range(start_col, start_col + 3):
+            if board[i][j] == num:
+                return False
+    return True
+
+
+def generate_board(difficulty='medium'):
+    """
+    Generates a Sudoku board with varying difficulty levels (easy, medium, hard).
+    Uses a random shuffle of rows, columns, and numbers to create a valid board.
+    """
+    base = 3
+    side = base * base
+
+    def pattern(r, c):
+        return (base * (r % base) + r // base + c) % side
+
+    def shuffle(s):
+        return random.sample(s, len(s))
+
+    rows = [g * base + r for g in shuffle(range(base)) for r in shuffle(range(base))]
+    cols = [g * base + c for g in shuffle(range(base)) for c in shuffle(range(base))]
+    nums = shuffle(range(1, side + 1))
+
+    board = [[nums[pattern(r, c)] for c in cols] for r in rows]
+
+    squares = side * side
+    empties = {
+        'easy': squares // 5,
+        'medium': squares * 3 // 4,
+        'hard': squares * 7 // 8
+    }.get(difficulty, squares // 2)
+
+    for p in random.sample(range(squares), empties):
+        board[p // side][p % side] = 0
+    return board
+
+
+def populate_grid():
+    """
+    Populates the GUI grid with the current state of the Sudoku board.
+    """
+    for i in range(9):
+        for j in range(9):
+            cell = grid[i][j]
+            cell.delete(0, tk.END)
+            if initial_board[i][j] != 0:  # If the cell is pre-filled.
+                cell.insert(0, str(initial_board[i][j]))
+                cell.config(state="disabled", disabledbackground="lightgray", disabledforeground="black")
+            else:  # If the cell is empty.
+                cell.config(state="normal", bg="#f0f0f0", fg="blue", font=("Arial", 18))
+
+
+def check_input(i, j, event):
+    """
+    Verifies the user input for a cell. Ensures it is a valid number (1-9).
+    """
+    try:
+        value = int(grid[i][j].get())
+        if value < 1 or value > 9:
+            raise ValueError
+    except ValueError:
+        messagebox.showerror("Invalid Input", "Please enter a number between 1 and 9.")
+        grid[i][j].delete(0, tk.END)
+
+
+def check_solution():
+    """
+    Checks whether the user's solution matches the correct solution.
+    """
+    user_board = [[int(grid[i][j].get()) if grid[i][j].get() else 0 for j in range(9)] for i in range(9)]
+    start_time = time.time()
+    if solve([row[:] for row in user_board]):
+        end_time = time.time()
+        duration = end_time - start_time
+        messagebox.showinfo("Success", f"Congratulations! The solution is correct. Time: {duration:.2f} seconds")
+    else:
+        end_time = time.time()
+        duration = end_time - start_time
+        messagebox.showerror("Error", f"The solution is incorrect. Time: {duration:.2f} seconds")
+
+
+def show_solution():
+    """
+    Shows the solved Sudoku board to the user by solving the board.
+    """
+    solved_board = [row[:] for row in initial_board]
+    solve(solved_board)
+    for i in range(9):
+        for j in range(9):
+            cell = grid[i][j]
+            cell.config(state="normal")
+            cell.delete(0, tk.END)
+            cell.insert(0, str(solved_board[i][j]))
+            cell.config(state="disabled", disabledbackground="lightgreen", disabledforeground="black")
+
+
+def start_timer():
+    """
+    Starts the timer that tracks the elapsed time during the game.
+    """
+    global timer_running, start_time
+    timer_running = True
+    start_time = time.time()  # Store the start time to calculate elapsed time
+    update_timer()
+
+
+def stop_timer():
+    """
+    Stops the timer when the game ends or pauses.
+    """
+    global timer_running
+    timer_running = False
+
+
+def update_timer():
+    """
+    Updates the timer label on the GUI every second.
+    """
+    if timer_running:
+        elapsed_time = time.time() - start_time
+        minutes = int(elapsed_time // 60)
+        seconds = int(elapsed_time % 60)
+        timer_label.config(text=f"Time: {minutes:02d}:{seconds:02d}")
+        root.after(1000, update_timer)  # Update every second
+
+
+def new_game(difficulty):
+    """
+    Initializes a new Sudoku game with the specified difficulty.
+    Clears the current board and generates a new puzzle.
+    """
+    global initial_board
+    initial_board = generate_board(difficulty)
+    populate_grid()
+    arc_steps.delete(1.0, tk.END)  # Clear the Arc Consistency log when a new game starts.
+    start_timer()
+
+
+# Initialize the game window
+root = tk.Tk()
+root.title("Sudoku Game with Arc Consistency")
+root.geometry("800x900")
+
+# Control buttons frame
+controls_frame = tk.Frame(root)
+controls_frame.pack(pady=10)
+
+# Game grid frame
+game_frame = tk.Frame(root, bg="#333")
+game_frame.pack(pady=10)
+
+# Log frame (Arc Consistency log)
+log_frame = tk.Frame(root)
+log_frame.pack(pady=10)
+
+# Timer label
+timer_label = tk.Label(controls_frame, text="Time: 00:00", font=("Arial", 14))
+timer_label.grid(row=0, column=5)
+
+# Difficulty buttons
+tk.Button(controls_frame, text="Easy", command=lambda: new_game('easy'), bg="lightblue", font=("Arial", 12)).grid(row=0, column=0, padx=5)
+tk.Button(controls_frame, text="Medium", command=lambda: new_game('medium'), bg="lightgreen", font=("Arial", 12)).grid(row=0, column=1, padx=5)
+tk.Button(controls_frame, text="Hard", command=lambda: new_game('hard'), bg="lightcoral", font=("Arial", 12)).grid(row=0, column=2, padx=5)
+
+# Check solution button
+tk.Button(controls_frame, text="Check Solution", command=check_solution, bg="lightgreen", font=("Arial", 12)).grid(row=0, column=4, padx=5)
+# Show solution button
+tk.Button(controls_frame, text="Show Solution", command=show_solution, bg="lightyellow", font=("Arial", 12)).grid(row=0, column=6, padx=5)
+
+# New game button
+tk.Button(controls_frame, text="New Game", command=lambda: new_game('medium'), bg="orange", font=("Arial", 12)).grid(row=0, column=7, padx=5)
+
+# Create the Sudoku grid with colored borders
+grid = [[tk.Entry(game_frame, width=4, font=("Arial", 18), justify="center", bg="#f0f0f0", borderwidth=2) for j in range(9)] for i in range(9)]
+for i in range(9):
+    for j in range(9):
+        cell = grid[i][j]
+        cell.grid(row=i, column=j, padx=1, pady=1, ipadx=10, ipady=5)
+        if i % 3 == 2 and j % 3 == 2:
+            cell.config(highlightbackground="black", highlightthickness=2)
+        cell.bind("<FocusOut>", partial(check_input, i, j))
+
+# Arc Consistency Log with larger font size
+arc_steps = tk.Text(log_frame, width=70, height=10, font=("Arial", 12))
+arc_steps.pack()
+
+# Start a medium difficulty game
+initial_board = generate_board(difficulty='medium')
+populate_grid()
+
+# Start the game timer
+start_timer()
+
+# Main event loop
+root.mainloop()
